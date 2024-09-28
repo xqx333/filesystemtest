@@ -5,6 +5,8 @@
 - **缓存优化**：使用缓存机制减少对认证服务器的请求次数。
 - **自动清理**：每天定时清理仓库中过期或冗余文件。
 - **手动清理**：支持通过 web 界面对仓库进行手动清理。
+- **鉴权选择**：支持用户通过accesstoken和token请求模型两种方式进行鉴权。
+- **适配接口**：适配了一个openai格式请求接口，返回上传成功可以和token请求模型的方式配合使用。
 
 ## 环境要求
 
@@ -24,6 +26,7 @@
    RELAY_URL=your_relay_url  填写域名
    SECRET_TOKEN=your_secret_token  通过/{SECRET_TOKEN}/test_cleanup访问手动清理页面
    FILE_RETENTION_DAYS=1  自动清理的时间间隔，默认一天
+   RELAY_MODEL=fileupload  自定义鉴权模型，默认fileupload
    ```
 
 ## 使用方法
@@ -46,8 +49,8 @@
 
 ## 配置说明
 
-- **限速策略**：每个用户的限速由其 `quota` 和 `used_quota` 动态计算，配置在 `rate_limit` 函数中。
-- **缓存策略**：默认缓存用户信息 5 分钟，以减少对认证服务器的请求。
+- **限速策略**：每个用户的限速由其 `quota` 和 `used_quota` 动态计算，配置在 `rate_limit` 函数中，请求模型方式不限速，可自行设置模型价格来限制用户。
+- **缓存策略**：accesstoken方式默认缓存用户信息 5 分钟，以减少对认证服务器的请求。
 
 ## 定时任务
 
