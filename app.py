@@ -502,17 +502,38 @@ def get_file(filename):
     通过 GitHub API 获取文件内容并返回给用户。
     适用于私有仓库。
     """
-    # 使用 GitHub API 获取文件内容
     url = f"{GITHUB_API_URL}/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3.raw"
     }
+    
+    # 请求文件内容
     response = requests.get(url, headers=headers)
+    
     if response.status_code == 200:
-        # 获取内容类型
+        # 获取 MIME 类型
         content_type = response.headers.get('Content-Type', 'application/octet-stream')
-        return send_file(BytesIO(response.content), mimetype=content_type, as_attachment=True, download_name=filename)
+        
+        # 判断是否可以预览的文件类型
+        previewable_mime_types = [
+            'text/plain',        # 文本文件
+            'text/html',         # HTML 文件
+            'image/jpeg',        # JPEG 图片
+            'image/png',         # PNG 图片
+            'application/pdf'    # PDF 文件
+        ]
+        
+        # 判断是否是预览文件类型
+        is_previewable = content_type in previewable_mime_types
+        
+        # 设置 as_attachment 的值
+        as_attachment = not is_previewable
+        
+        return send_file(BytesIO(response.content), 
+                         mimetype=content_type, 
+                         as_attachment=as_attachment, 
+                         download_name=filename)
     else:
         abort(404)
 
