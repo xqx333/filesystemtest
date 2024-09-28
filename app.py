@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache  # 新增导入
+from flask import g
 
 app = Flask(__name__)
 
@@ -20,6 +21,7 @@ GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', 'default_token')  # 替换为您的 Git
 RELAY_URL = os.getenv('RELAY_URL', 'https://default_relay_url.com')  # 替换为您的中转程序 URL
 SECRET_TOKEN = os.getenv('SECRET_TOKEN', 'default_secret_token') # 定义一个随机密钥仅用于手动清理
 FILE_RETENTION_DAYS = int(os.getenv('FILE_RETENTION_DAYS', 1))  # 定义文件的过期时间用于自动清理
+RELAY_MODEL = os.getenv('RELAY_MODEL', 'fileupload') # 自定义模型名
 
 # GitHub API 基础 URL
 GITHUB_API_URL = 'https://api.github.com'
@@ -67,6 +69,13 @@ HTML_TEMPLATE = """
     <div class="upload-container">
         <h2 class="text-center">文件上传</h2>
         <form method="POST" action="/upload" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="auth_type" class="form-label">认证方式</label>
+                <select class="form-select" id="auth_type" name="auth_type" required>
+                <option value="custom_model">token(请求相应模型进行验证，可能会扣费)</option>
+                    <option value="accesstoken">AccessToken(有频率限制,不会进行扣费)</option>
+                </select>
+            </div>
             <div class="mb-3">
                 <label for="token" class="form-label">用户 Token</label>
                 <input type="text" class="form-control" id="token" name="token" placeholder="请输入您的 Token" required>
@@ -212,11 +221,40 @@ def upload_to_github(file_content, file_path, commit_message="Add file"):
     else:
         return False, "文件上传失败，请稍后再试。"
 
-@cache.memoize(timeout=300)  # 缓存 5 分钟
-def get_user_info(token):
+
+def authenticate_user():
     """
-    通过中转程序获取用户信息。
-    使用缓存来减少频繁请求认证服务器的次数。
+    认证用户并存储结果在请求上下文中
+    """
+    if hasattr(g, 'auth_result'):
+        return g.auth_result
+
+    token = request.form.get('token')
+    auth_type = request.form.get('auth_type')
+
+    if not token or not auth_type:
+        return False, "缺少用户 Token 或认证方式。"
+
+    auth_success, user_info = get_user_info(token, auth_type)
+    g.auth_result = (auth_success, user_info)
+    return g.auth_result
+
+
+def get_user_info(token, auth_type):
+    """
+    根据选择的认证方式获取用户信息。
+    """
+    if auth_type == 'accesstoken':
+        return get_user_info_accesstoken(token)
+    elif auth_type == 'custom_model':
+        return authenticate_with_custom_model(token)
+    else:
+        return False, "无效的认证方式"
+
+@cache.memoize(timeout=300)  # 缓存 5 分钟
+def get_user_info_accesstoken(token):
+    """
+    通过accesstoken获取用户信息。
     """
     url = f"{RELAY_URL}/api/user/self"
     headers = {
@@ -230,6 +268,30 @@ def get_user_info(token):
             return False, "用户认证失败或Token无效。"
     except requests.RequestException:
         return False, "无法连接到认证服务器，请稍后再试。"
+
+def authenticate_with_custom_model(token):
+    """
+    使用自定义模型进行认证
+    """
+    url = f"{RELAY_URL}/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+    data = {
+        "model": RELAY_MODEL,
+        "messages": [{"role": "user", "content": "echo hi"}],
+        "stream": False,
+        "max_tokens": 1
+    }
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        if response.status_code == 200:
+            return True, {"data": {"quota": 10000000000, "used_quota": 0}}  # 假设配额
+        else:
+            return False, "用户认证失败或Token无效。"
+    except requests.RequestException:
+        return False, "无法连接到认证服务器,请稍后再试。"
 
 @app.route('/', methods=['GET'])
 def index():
@@ -247,32 +309,24 @@ limiter = Limiter(
 
 def rate_limit():
     """
-    动态计算每分钟的请求限制，根据 (quota + used_quota) / 5000000，最小为1。
+    动态计算每分钟的请求限制
     """
-    token = request.form.get('token')
-    if not token:
-        # 如果没有 Token，应用最严格的限速
-        return "1 per minute"
-
-    auth_success, user_info = get_user_info(token)
+    auth_success, user_info = authenticate_user()
     if not auth_success:
-        # 如果认证失败，应用最严格的限速
         return "1 per minute"
 
     try:
         quota = user_info['data']['quota']
         used_quota = user_info['data']['used_quota']
         total_quota = quota + used_quota
-        rate = total_quota / 5000000
-        rate = max(1, int(rate))  # 最小为1
+        rate = max(1, int(total_quota / 5000000))
     except (KeyError, TypeError):
-        # 如果信息格式错误，应用最严格的限速
         rate = 1
 
     return f"{rate} per minute"
 
 @app.route('/upload', methods=['POST'])
-@limiter.limit(rate_limit, key_func=lambda: request.form.get('token') or get_remote_address())
+@limiter.limit(rate_limit)
 def upload_file():
     """
     处理文件上传请求。
@@ -281,16 +335,9 @@ def upload_file():
     success = False
     file_url = None
 
-    token = request.form.get('token')
-    if not token:
-        message = "缺少用户 Token。"
-        return render_template_string(HTML_TEMPLATE, message=message, success=success)
-
-    # 用户认证
-    auth_success, user_info = get_user_info(token)
+    auth_success, user_info = authenticate_user()
     if not auth_success:
-        message = user_info  # 包含错误信息
-        return render_template_string(HTML_TEMPLATE, message=message, success=success)
+        return render_template_string(HTML_TEMPLATE, message=user_info, success=success)
 
     # 提取 quota 和 used_quota
     try:
@@ -506,6 +553,30 @@ def manual_cleanup():
         # 仅渲染清理页面
         return render_template_string(CLEANUP_TEMPLATE)
 
+
+@app.route('/v1/chat/completions', methods=['POST'])
+def chat_completions():
+    """
+    处理中转程序发送的openai格式请求
+    """
+    return jsonify({
+        "id": "chatcmpl-" + uuid.uuid4().hex,
+        "object": "chat.completion",
+        "created": int(datetime.now().timestamp()),
+        "model": RELAY_MODEL,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "认证成功"
+                },
+                "logprobs": None,
+                "finish_reason": "stop"
+            }
+        ]
+    }), 200
+
 @app.errorhandler(404)
 def not_found(e):
     """
@@ -540,4 +611,4 @@ def start_scheduler():
 if __name__ == '__main__':
     # 启动定时任务调度器
     start_scheduler()
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
