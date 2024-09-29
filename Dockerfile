@@ -5,7 +5,7 @@ FROM python:3.11-slim AS builder
 WORKDIR /app
 
 # 安装构建依赖
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y libmagic1 && \
     build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
