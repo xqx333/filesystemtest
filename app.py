@@ -10,6 +10,8 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache  # 新增导入
 from flask import g
+import mimetypes
+from werkzeug.http import parse_options_header
 
 app = Flask(__name__)
 
@@ -496,6 +498,7 @@ def clean_github_repository(retention_days=None, number_to_delete=None):
     print(f"[{datetime.now()}] 仓库清理完成。成功删除了 {len(deleted_files)} 个文件。")
     return f"仓库清理完成。成功删除了 {len(deleted_files)} 个文件。"
 
+
 @app.route('/file/<filename>', methods=['GET'])
 def get_file(filename):
     """
@@ -507,33 +510,75 @@ def get_file(filename):
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3.raw"
     }
-    
+
     # 请求文件内容
     response = requests.get(url, headers=headers)
-    
+
     if response.status_code == 200:
-        # 获取 MIME 类型
+        # 从 GitHub 获取的 Content-Type
         content_type = response.headers.get('Content-Type', 'application/octet-stream')
-        
+        mime_type, _ = parse_options_header(content_type)
+
+        # 如果 GitHub 没有返回正确的 MIME 类型，则根据文件扩展名猜测
+        if mime_type == 'application/octet-stream':
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type:
+                mime_type = 'application/octet-stream'
+
+        # 判断是否可以预览的文件类型
         # 判断是否可以预览的文件类型
         previewable_mime_types = [
-            'text/plain',        # 文本文件
-            'text/html',         # HTML 文件
-            'image/jpeg',        # JPEG 图片
-            'image/png',         # PNG 图片
-            'application/pdf'    # PDF 文件
+            # 文本文件
+            'text/plain',
+            'text/html',
+            'text/css',
+            'text/javascript',
+            'application/javascript',
+            'application/json',
+            'application/xml',
+            'text/markdown',
+            # 图片文件
+            'image/jpeg',
+            'image/png',
+            'image/gif',
+            'image/svg+xml',
+            'image/webp',
+            'image/bmp',
+            'image/tiff',
+            # 文档文件
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            # 多媒体文件
+            'video/mp4',
+            'video/webm',
+            'video/ogg',
+            'video/quicktime',
+            'audio/mpeg',
+            'audio/ogg',
+            'audio/wav',
+            'audio/webm',
+            'audio/mp4',
+            # 其他文件类型
+            'application/zip',
+            'application/x-rar-compressed'
         ]
-        
-        # 判断是否是预览文件类型
-        is_previewable = content_type in previewable_mime_types
-        
+
+        is_previewable = mime_type in previewable_mime_types
+
         # 设置 as_attachment 的值
         as_attachment = not is_previewable
-        
-        return send_file(BytesIO(response.content), 
-                         mimetype=content_type, 
-                         as_attachment=as_attachment, 
-                         download_name=filename)
+
+        return send_file(
+            BytesIO(response.content),
+            mimetype=mime_type,
+            as_attachment=as_attachment,
+            download_name=filename
+        )
     else:
         abort(404)
 
@@ -632,4 +677,4 @@ def start_scheduler():
 if __name__ == '__main__':
     # 启动定时任务调度器
     start_scheduler()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
