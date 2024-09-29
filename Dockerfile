@@ -4,9 +4,10 @@ FROM python:3.11-slim AS builder
 # 设置工作目录
 WORKDIR /app
 
-# 安装构建依赖
-RUN apt-get update && apt-get install -y libmagic1 && \
+# 安装构建依赖，包括 libmagic-dev
+RUN apt-get update && apt-get install -y \
     build-essential \
+    libmagic-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -17,6 +18,13 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 # 第二阶段：运行阶段
 FROM python:3.11-slim
 
+# 安装运行时依赖，包括 libmagic1
+RUN apt-get update && apt-get install -y \
+    libmagic1 \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # 创建一个非root用户
 RUN useradd -m appuser
 
@@ -26,12 +34,6 @@ WORKDIR /app
 # 设置环境变量
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-
-# 安装运行时依赖（如果有）
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
 # 复制已安装的 Python 包
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
