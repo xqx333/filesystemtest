@@ -2,7 +2,7 @@ import os
 import base64
 import uuid
 import requests
-from flask import Flask, request, jsonify, send_file, abort, render_template_string
+from flask import Flask, request, jsonify, send_file, abort, render_template_string, current_app
 from io import BytesIO
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
@@ -11,6 +11,10 @@ from flask_limiter.util import get_remote_address
 from flask_caching import Cache  # 新增导入
 from flask import g
 import mimetypes
+import magic
+import logging
+# 配置日志
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
@@ -514,10 +518,16 @@ def get_file(filename):
     response = requests.get(url, headers=headers)
 
     if response.status_code == 200:
-        # 基于文件扩展名推断 MIME 类型
-        mime_type, _ = mimetypes.guess_type(filename)
+        file_content = response.content
+
+        # 使用 python-magic 推断 MIME 类型
+        mime = magic.Magic(mime=True)
+        mime_type = mime.from_buffer(file_content)
         if not mime_type:
-            mime_type = 'application/octet-stream'  # 默认 MIME 类型
+            # 如果无法推断，使用文件扩展名
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type:
+                mime_type = 'application/octet-stream'  # 默认 MIME 类型
 
         # 判断是否可以预览的文件类型
         previewable_mime_types = [
@@ -530,6 +540,7 @@ def get_file(filename):
             'application/json',
             'application/xml',
             'text/markdown',
+            'application/xhtml+xml',
             # 图片文件
             'image/jpeg',
             'image/png',
@@ -538,6 +549,7 @@ def get_file(filename):
             'image/webp',
             'image/bmp',
             'image/tiff',
+            'image/x-icon',
             # 文档文件
             'application/pdf',
             'application/msword',
@@ -546,6 +558,10 @@ def get_file(filename):
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'application/vnd.ms-powerpoint',
             'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/rtf',
+            'application/vnd.oasis.opendocument.text',
+            'application/vnd.oasis.opendocument.spreadsheet',
+            'application/vnd.oasis.opendocument.presentation',
             # 多媒体文件
             'video/mp4',
             'video/webm',
@@ -558,13 +574,22 @@ def get_file(filename):
             'audio/mp4',
             # 其他文件类型
             'application/zip',
-            'application/x-rar-compressed'
+            'application/x-rar-compressed',
+            'application/x-7z-compressed',
+            'application/x-tar',
+            'application/gzip',
+            'application/vnd.mozilla.xul+xml',
+            # 其他可能的预览类型
+            'application/x-shockwave-flash',  # 尽管现代浏览器已逐步停止支持
         ]
 
         is_previewable = mime_type in previewable_mime_types
 
         # 设置 as_attachment 的值
         as_attachment = not is_previewable
+
+        # 日志记录（可选）
+        current_app.logger.info(f"Serving file '{filename}' with MIME type '{mime_type}'. Previewable: {is_previewable}")
 
         return send_file(
             BytesIO(response.content),
@@ -573,6 +598,7 @@ def get_file(filename):
             download_name=filename
         )
     else:
+        current_app.logger.error(f"File not found: {filename}")
         abort(404)
 
 @app.route(f'/{SECRET_TOKEN}/test_cleanup', methods=['GET', 'POST'])
