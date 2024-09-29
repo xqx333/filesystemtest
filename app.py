@@ -11,7 +11,6 @@ from flask_limiter.util import get_remote_address
 from flask_caching import Cache  # 新增导入
 from flask import g
 import mimetypes
-from werkzeug.http import parse_options_header
 
 app = Flask(__name__)
 
@@ -508,24 +507,18 @@ def get_file(filename):
     url = f"{GITHUB_API_URL}/repos/{GITHUB_USERNAME}/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3.raw"
+        "Accept": "application/vnd.github.v3.raw"  # 获取原始文件内容
     }
 
     # 请求文件内容
     response = requests.get(url, headers=headers)
 
     if response.status_code == 200:
-        # 从 GitHub 获取的 Content-Type
-        content_type = response.headers.get('Content-Type', 'application/octet-stream')
-        mime_type, _ = parse_options_header(content_type)
+        # 基于文件扩展名推断 MIME 类型
+        mime_type, _ = mimetypes.guess_type(filename)
+        if not mime_type:
+            mime_type = 'application/octet-stream'  # 默认 MIME 类型
 
-        # 如果 GitHub 没有返回正确的 MIME 类型，则根据文件扩展名猜测
-        if mime_type == 'application/octet-stream':
-            mime_type, _ = mimetypes.guess_type(filename)
-            if not mime_type:
-                mime_type = 'application/octet-stream'
-
-        # 判断是否可以预览的文件类型
         # 判断是否可以预览的文件类型
         previewable_mime_types = [
             # 文本文件
