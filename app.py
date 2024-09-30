@@ -45,67 +45,103 @@ cache_config = {
 app.config.from_mapping(cache_config)
 cache = Cache(app)
 
-# 前端上传页面模板
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <title>文件上传</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {
-            background-color: #f8f9fa;
-        }
-        .upload-container {
-            max-width: 500px;
-            margin: 50px auto;
-            padding: 30px;
-            background-color: #ffffff;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        .upload-container h2 {
-            margin-bottom: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="upload-container">
-        <h2 class="text-center">文件上传</h2>
-        <form method="POST" action="/upload" enctype="multipart/form-data">
-            <div class="mb-3">
-                <label for="auth_type" class="form-label">认证方式</label>
-                <select class="form-select" id="auth_type" name="auth_type" required>
-                <option value="custom_model">token(请求相应模型进行验证，可能会扣费)</option>
-                    <option value="accesstoken">AccessToken(有频率限制,不会进行扣费)</option>
-                </select>
-            </div>
-            <div class="mb-3">
-                <label for="token" class="form-label">用户 Token</label>
-                <input type="text" class="form-control" id="token" name="token" placeholder="请输入您的 Token" required>
-            </div>
-            <div class="mb-3">
-                <label for="file" class="form-label">选择文件</label>
-                <input class="form-control" type="file" id="file" name="file" required>
-                <div class="form-text">最大允许上传5MB的文件。</div>
-            </div>
-            <button type="submit" class="btn btn-primary w-100">上传</button>
-        </form>
-        {% if message %}
-            <div class="mt-3 alert alert-{{ 'success' if success else 'danger' }}" role="alert">
-                {{ message }}
-            </div>
-            {% if file_url %}
-                <div class="mt-2">
-                    <a href="{{ file_url }}" class="btn btn-success">访问文件</a>
-                    <p class="mt-2">文件链接: <a href="{{ file_url }}" target="_blank">{{ file_url }}</a></p>
-                </div>
-            {% endif %}
-        {% endif %}
-    </div>
-</body>
-</html>
+HTML_TEMPLATE = """ 
+<!DOCTYPE html> 
+<html lang="zh-CN"> 
+<head> 
+    <meta charset="UTF-8"> 
+    <title>文件上传</title> 
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"> 
+    <style> 
+        body { 
+            background-color: #f8f9fa; 
+        } 
+        .upload-container { 
+            max-width: 500px; 
+            margin: 50px auto; 
+            padding: 30px; 
+            background-color: #ffffff; 
+            border-radius: 10px; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1); 
+        } 
+        .upload-container h2 { 
+            margin-bottom: 20px; 
+        } 
+    </style> 
+</head> 
+<body> 
+    <div class="upload-container"> 
+        <h2 class="text-center">文件上传</h2> 
+        <form id="upload-form" enctype="multipart/form-data"> 
+            <div class="mb-3"> 
+                <label for="auth_type" class="form-label">认证方式</label> 
+                <select class="form-select" id="auth_type" name="auth_type" required> 
+                    <option value="custom_model">token(请求相应模型进行验证，可能会扣费)</option> 
+                    <option value="accesstoken">AccessToken(有频率限制,不会进行扣费)</option> 
+                </select> 
+            </div> 
+            <div class="mb-3"> 
+                <label for="token" class="form-label">用户 Token</label> 
+                <input type="text" class="form-control" id="token" name="token" placeholder="请输入您的 Token" required> 
+            </div> 
+            <div class="mb-3"> 
+                <label for="file" class="form-label">选择文件</label> 
+                <input class="form-control" type="file" id="file" name="file" required> 
+                <div class="form-text">最大允许上传5MB的文件。</div> 
+            </div> 
+            <button type="submit" class="btn btn-primary w-100">上传</button> 
+        </form> 
+        <div id="response-message" class="mt-3"></div>
+        <div id="file-link" class="mt-2"></div>
+    </div> 
+
+    <script> 
+        document.getElementById('upload-form').addEventListener('submit', async function(event) { 
+            event.preventDefault(); // 阻止默认表单提交行为 
+
+            const form = event.target; 
+            const formData = new FormData(form); 
+
+            // Clear previous messages 
+            const messageDiv = document.getElementById('response-message'); 
+            const fileLinkDiv = document.getElementById('file-link'); 
+            messageDiv.innerHTML = ''; 
+            fileLinkDiv.innerHTML = ''; 
+
+            try { 
+                const response = await fetch('/upload', { 
+                    method: 'POST', 
+                    body: formData, 
+                    headers: { 
+                        'Accept': 'application/json' 
+                    } 
+                }); 
+
+                const result = await response.json(); 
+
+                if (response.ok) { 
+                    if (result.success) { 
+                        messageDiv.innerHTML = `<div class="alert alert-success" role="alert">${result.message}</div>`; 
+                        if (result.file_url) { 
+                            fileLinkDiv.innerHTML = `
+                                <a href="${result.file_url}" class="btn btn-success">访问文件</a>
+                                <p class="mt-2">文件链接: <a href="${result.file_url}" target="_blank">${result.file_url}</a></p>
+                            `; 
+                        } 
+                    } else { 
+                        messageDiv.innerHTML = `<div class="alert alert-danger" role="alert">${result.message}</div>`; 
+                    } 
+                } else { 
+                    messageDiv.innerHTML = `<div class="alert alert-danger" role="alert">${result.message || '上传失败，请稍后再试。'}</div>`; 
+                } 
+            } catch (error) { 
+                console.error('Error:', error); 
+                messageDiv.innerHTML = `<div class="alert alert-danger" role="alert">上传过程中发生错误，请稍后再试。</div>`; 
+            } 
+        }); 
+    </script> 
+</body> 
+</html> 
 """
 
 # 手动清理页面模板（调整为同时支持按日期删除和按数量删除）
@@ -330,63 +366,81 @@ def rate_limit():
 
     return f"{rate} per minute"
 
-@app.route('/upload', methods=['POST'])
-@limiter.limit(rate_limit)
-def upload_file():
-    """
-    处理文件上传请求。
-    """
-    message = None
-    success = False
-    file_url = None
+@app.route('/upload', methods=['POST']) 
+@limiter.limit(rate_limit) 
+def upload_file(): 
+    """ 
+    处理文件上传请求。 
+    """ 
+    auth_success, user_info = authenticate_user() 
+    if not auth_success: 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": False, "message": user_info}), 401
+        else:
+            return render_template_string(HTML_TEMPLATE, message=user_info, success=False) 
 
-    auth_success, user_info = authenticate_user()
-    if not auth_success:
-        return render_template_string(HTML_TEMPLATE, message=user_info, success=success)
+    # 提取 quota 和 used_quota 
+    try: 
+        quota = user_info['data']['quota'] 
+        used_quota = user_info['data']['used_quota'] 
+    except (KeyError, TypeError): 
+        message = "用户信息格式错误。" 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": False, "message": message}), 500
+        else:
+            return render_template_string(HTML_TEMPLATE, message=message, success=False) 
 
-    # 提取 quota 和 used_quota
-    try:
-        quota = user_info['data']['quota']
-        used_quota = user_info['data']['used_quota']
-    except (KeyError, TypeError):
-        message = "用户信息格式错误。"
-        return render_template_string(HTML_TEMPLATE, message=message, success=success)
+    # 检查 quota 和 used_quota 
+    if (quota + used_quota) <= 2500000: 
+        message = "您的配额不足，无法上传文件。" 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": False, "message": message}), 400
+        else:
+            return render_template_string(HTML_TEMPLATE, message=message, success=False) 
 
-    # 检查 quota 和 used_quota
-    if (quota + used_quota) <= 2500000:
-        message = "您的配额不足，无法上传文件。"
-        return render_template_string(HTML_TEMPLATE, message=message, success=success)
+    # 检查文件是否存在 
+    if 'file' not in request.files: 
+        message = "请求中没有文件部分。" 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": False, "message": message}), 400
+        else:
+            return render_template_string(HTML_TEMPLATE, message=message, success=False) 
+    file = request.files['file'] 
+    if file.filename == '': 
+        message = "没有选择要上传的文件。" 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": False, "message": message}), 400
+        else:
+            return render_template_string(HTML_TEMPLATE, message=message, success=False) 
 
-    # 检查文件是否存在
-    if 'file' not in request.files:
-        message = "请求中没有文件部分。"
-        return render_template_string(HTML_TEMPLATE, message=message, success=success)
-    file = request.files['file']
-    if file.filename == '':
-        message = "没有选择要上传的文件。"
-        return render_template_string(HTML_TEMPLATE, message=message, success=success)
+    # 检查文件大小 
+    file.seek(0, os.SEEK_END) 
+    file_length = file.tell() 
+    file.seek(0)  # 重置文件指针 
+    if file_length > MAX_FILE_SIZE: 
+        message = "上传的文件过大，最大允许5MB。" 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": False, "message": message}), 413
+        else:
+            return render_template_string(HTML_TEMPLATE, message=message, success=False) 
 
-    # 检查文件大小
-    file.seek(0, os.SEEK_END)
-    file_length = file.tell()
-    file.seek(0)  # 重置文件指针
-    if file_length > MAX_FILE_SIZE:
-        message = "上传的文件过大，最大允许5MB。"
-        return render_template_string(HTML_TEMPLATE, message=message, success=success)
-
-    # 读取文件内容
-    file_content = file.read()
-    # 生成随机文件名，保留原扩展名
-    ext = os.path.splitext(file.filename)[1]
-    random_filename = f"{uuid.uuid4().hex}{ext}"
-    # 上传到 GitHub
-    upload_success, result = upload_to_github(file_content, random_filename)
-    if upload_success:
-        file_url = f"{request.host_url}file/{random_filename}"
-        message = "文件上传成功！"
-        success = True
-    else:
-        message = result  # 包含错误信息
+    # 读取文件内容 
+    file_content = file.read() 
+    # 生成随机文件名，保留原扩展名 
+    ext = os.path.splitext(file.filename)[1] 
+    random_filename = f"{uuid.uuid4().hex}{ext}" 
+    # 上传到 GitHub 
+    upload_success, result = upload_to_github(file_content, random_filename) 
+    if upload_success: 
+        file_url = f"{request.host_url}file/{random_filename}" 
+        message = "文件上传成功！" 
+        success = True 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": True, "message": message, "file_url": file_url}), 200
+    else: 
+        message = result  # 包含错误信息 
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({"success": False, "message": message}), 500
 
     return render_template_string(HTML_TEMPLATE, message=message, success=success, file_url=file_url)
 
