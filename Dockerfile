@@ -25,9 +25,6 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建一个非root用户
-RUN useradd -m appuser
-
 # 设置工作目录
 WORKDIR /app
 
@@ -41,10 +38,6 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 复制应用程序代码
 COPY . .
-
-# 更改文件所有权并切换到非root用户
-RUN chown -R appuser:appuser /app
-USER appuser
 
 # 暴露端口
 EXPOSE 5000
